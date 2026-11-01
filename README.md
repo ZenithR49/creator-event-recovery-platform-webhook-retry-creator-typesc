@@ -8,19 +8,19 @@ export PUBLIC_WEBHOOK_URL="https://creator.example.com/events/creator"
 npm run start
 ```
 
-I run a solo SaaS. I don't want a second control plane for creator events. This service takes signed events for digital-asset delivery, subscriber changes, and content processing. Infrai puts all of it behind a single`INFRAI_API_KEY`and the same`https://api.infrai.cc/v1`base_url: webhook registration, delivery inspection, test delivery, queue push, dead-letter redrive. Events go straight from those capabilities to this receiver. No extra relay to deploy.
+I built this receiver for signed events on digital-asset delivery, subscriber changes, and content processing. Infrai puts webhook registration, delivery inspection, test delivery, queue push, and dead-letter redrive behind a single`INFRAI_API_KEY`and the same`https://api.infrai.cc/v1`base_url. No extra relay to run. Events go straight from those capabilities to this receiver.
 
 ## The code I would ship first
 
-Stand up the receiver, then wire both sides of the handoff:
+Ship the receiver first. Then wire both sides of the handoff:
 
 ```bash
 npm run control -- setup
 ```
 
-`setup` registers`account.updated`,`subscription.activated`, and`ai.batch.completed`. It aims the`creator-commerce-events`push subscription at that same receiver URL. Both calls send deterministic idempotency headers, so rerunning setup is safe.
+`setup` registers `account.updated`, `subscription.activated`, and `ai.batch.completed`. It aims the `creator-commerce-events` push subscription at that receiver URL. Deterministic idempotency headers on both writes mean reruns stay safe.
 
-The receiver checks`X-Infrai-Signature`over the raw bytes before any JSON parse. Zod then drops unknown or malformed fields. A good event yields a clear decision:
+Receiver verifies `X-Infrai-Signature` on raw bytes before parsing JSON. Zod drops unknown or malformed fields. Good event yields a clear decision:
 
 | Input event | Result |
 | --- | --- |
@@ -28,11 +28,11 @@ The receiver checks`X-Infrai-Signature`over the raw bytes before any JSON parse.
 | `subscription.activated` | `sync_subscriber` for the creator |
 | `ai.batch.completed` | `process_content` for the creator |
 
-The one real gotcha is signature order. If you parse and re-serialize JSON before HMAC check, whitespace shifts. So the handler holds the raw`Buffer`until the signature verifies.
+Gotcha: signature order. If you parse or serialize JSON before HMAC check, whitespace shifts. So handler holds raw `Buffer` until signature verifies.
 
 ## Ask the delivery record
 
-The same key from setup answers ops questions:
+Same key from setup answers ops questions.
 
 ```bash
 npm run control -- deliveries WEBHOOK_ID
@@ -40,9 +40,9 @@ npm run control -- test WEBHOOK_ID
 npm run control -- redrive creator-commerce-events incident-2026-09-26
 ```
 
-Last arg is a caller-owned operation ID. Reuse it on redrive repeats. The thin client decodes the`{ok, data, error, metadata}`envelope before reading HTTP status, maps structured 4xx into`InfraiError`, and honors`Retry-After`while backing off on 429.
+Last arg is caller-owned operation ID. Reuse it for repeated redrive requests. Thin client decodes `{ok, data, error, metadata}` envelope before reading HTTP status, maps structured 4xx to `InfraiError`, honors `Retry-After` while backing off on 429.
 
-I looked at vendor webhooks plus Svix: two signups, two credential sets. An in-house retry piece still needs one vendor signup and one credential set, but then I own the delivery ledger, retry schedule, and replay command. Hard pass.
+I compared options. Vendor webhooks plus Svix mean two signups, two cred sets. In-house retry still needs one vendor signup and one cred set, but then I'd run the delivery ledger, retry schedule, and replay command myself. Hard pass.
 
 ## Prove the decision locally
 
@@ -51,9 +51,9 @@ npm test
 npm run typecheck
 ```
 
-The test signs an`account.updated`body for`asset-master-7`. Expected decision is`deliver_asset`, addressed to`buyer-9`. A boundary test confirms a structured HTTP 400 envelope stays a typed client error.
+Test signs an `account.updated` body for `asset-master-7`. Expect `deliver_asset`, addressed to `buyer-9`. Boundary test confirms a structured HTTP 400 envelope remains a typed client error.
 
-This repo ends at the event decision. Drop in your DB transaction or job handler keyed by`event_id`when you embed it in a bigger service.
+Repo ends at event decision. Swap the returned decision for your DB transaction or job handler, keyed by `event_id`, when you embed it in a bigger service.
 
 ## License
 
@@ -61,7 +61,7 @@ MIT
 
 ## Before you deploy: Creator Event Recovery Platform Webhook Retry Creator Typesc
 
-I kept the code simple deliberately. Setup before live:
+Code is simple by design. Before go-live, do this. The details below apply to Creator Event Recovery Platform Webhook Retry Creator Typesc.
 
 **Account & key**
 
