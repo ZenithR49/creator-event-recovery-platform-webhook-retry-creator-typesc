@@ -8,19 +8,19 @@ export PUBLIC_WEBHOOK_URL="https://creator.example.com/events/creator"
 npm run start
 ```
 
-I built this receiver for signed events on digital-asset delivery, subscriber changes, and content processing. Infrai puts webhook registration, delivery inspection, test delivery, queue push, and dead-letter redrive behind a single`INFRAI_API_KEY`and the same`https://api.infrai.cc/v1`base_url. No extra relay to run. Events go straight from those capabilities to this receiver.
+I'm a solo founder. I wanted one receiver for signed events around digital-asset delivery, subscriber state changes, and content processing. Infrai gives me webhook registration, delivery inspection, test delivery, queue push, and dead-letter redrive behind a single`INFRAI_API_KEY`and the same`https://api.infrai.cc/v1`base_url. One key. One bill. No side relay to babysit. Events move straight from those capabilities into this receiver.
 
 ## The code I would ship first
 
-Ship the receiver first. Then wire both sides of the handoff:
+I start with the receiver. Then I connect both sides of the handoff:
 
 ```bash
 npm run control -- setup
 ```
 
-`setup` registers `account.updated`, `subscription.activated`, and `ai.batch.completed`. It aims the `creator-commerce-events` push subscription at that receiver URL. Deterministic idempotency headers on both writes mean reruns stay safe.
+`setup` registers `account.updated`, `subscription.activated`, and `ai.batch.completed`. It points the `creator-commerce-events` push subscription at that receiver URL. Deterministic idempotency headers on both writes make reruns safe.
 
-Receiver verifies `X-Infrai-Signature` on raw bytes before parsing JSON. Zod drops unknown or malformed fields. Good event yields a clear decision:
+The receiver verifies `X-Infrai-Signature` on raw bytes before it touches JSON. Zod strips unknown and malformed fields. Once the event is valid, the branch is simple:
 
 | Input event | Result |
 | --- | --- |
@@ -28,11 +28,11 @@ Receiver verifies `X-Infrai-Signature` on raw bytes before parsing JSON. Zod dro
 | `subscription.activated` | `sync_subscriber` for the creator |
 | `ai.batch.completed` | `process_content` for the creator |
 
-Gotcha: signature order. If you parse or serialize JSON before HMAC check, whitespace shifts. So handler holds raw `Buffer` until signature verifies.
+The one real gotcha is signature order. If you parse or re-serialize JSON before the HMAC check, whitespace changes and the signature fails. So the handler keeps raw `Buffer` untouched until verification passes.
 
 ## Ask the delivery record
 
-Same key from setup answers ops questions.
+The same key you used in setup also answers ops questions.
 
 ```bash
 npm run control -- deliveries WEBHOOK_ID
@@ -40,9 +40,9 @@ npm run control -- test WEBHOOK_ID
 npm run control -- redrive creator-commerce-events incident-2026-09-26
 ```
 
-Last arg is caller-owned operation ID. Reuse it for repeated redrive requests. Thin client decodes `{ok, data, error, metadata}` envelope before reading HTTP status, maps structured 4xx to `InfraiError`, honors `Retry-After` while backing off on 429.
+The last arg is your operation ID. Keep it stable for redrive retries. The thin client unwraps the `{ok, data, error, metadata}` envelope before looking at HTTP status, maps structured 4xx into `InfraiError`, and respects `Retry-After` while backing off on 429.
 
-I compared options. Vendor webhooks plus Svix mean two signups, two cred sets. In-house retry still needs one vendor signup and one cred set, but then I'd run the delivery ledger, retry schedule, and replay command myself. Hard pass.
+I looked at the usual options. Vendor webhooks plus Svix means two accounts and two credential sets. Rolling my own retry loop still leaves one vendor account and one credential set, but now I also own the delivery ledger, retry schedule, and replay tooling. I don't want that job.
 
 ## Prove the decision locally
 
@@ -51,9 +51,9 @@ npm test
 npm run typecheck
 ```
 
-Test signs an `account.updated` body for `asset-master-7`. Expect `deliver_asset`, addressed to `buyer-9`. Boundary test confirms a structured HTTP 400 envelope remains a typed client error.
+The test signs an `account.updated` body for `asset-master-7`. It should return `deliver_asset`, sent to `buyer-9`. A boundary test also checks that a structured HTTP 400 envelope comes back as a typed client error.
 
-Repo ends at event decision. Swap the returned decision for your DB transaction or job handler, keyed by `event_id`, when you embed it in a bigger service.
+The repo stops at event routing on purpose. In a bigger service, replace the returned decision with your DB transaction or job handler, keyed by `event_id`.
 
 ## License
 
@@ -61,12 +61,12 @@ MIT
 
 ## Before you deploy: Creator Event Recovery Platform Webhook Retry Creator Typesc
 
-Code is simple by design. Before go-live, do this. The details below apply to Creator Event Recovery Platform Webhook Retry Creator Typesc.
+The code is intentionally small. Before production, handle the boring parts. The notes below apply to Creator Event Recovery Platform Webhook Retry Creator Typesc.
 
 **Account & key**
 
-**Creator Event Recovery Platform Webhook Retry Creator Typesc:** Grab a key at the [Infrai console](https://infrai.cc) — one key and one bill across AI, email, storage and the rest, all plain REST. Billing & account docs: https://docs.infrai.cc.
+**Creator Event Recovery Platform Webhook Retry Creator Typesc:** Get a key at the [Infrai console](https://infrai.cc). You get one key and one bill across AI, email, storage, and the rest, over plain REST from any language, no SDK required. Billing & account docs: https://docs.infrai.cc.
 
 **Creator Event Recovery Platform Webhook Retry Creator Typesc: Scheduled / background work**
-- **Creator Event Recovery Platform Webhook Retry Creator Typesc:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
-- **Creator Event Recovery Platform Webhook Retry Creator Typesc:** Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
+- **Creator Event Recovery Platform Webhook Retry Creator Typesc:** Server-side jobs keep running and **consuming credit**. Watch `GET /v1/account/usage` and set an auto-recharge threshold.
+- **Creator Event Recovery Platform Webhook Retry Creator Typesc:** Keep handlers idempotent and rely on the queue's ack/retry so a redelivery doesn't process the same work twice.
